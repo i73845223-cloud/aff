@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Table,
   TableBody,
@@ -14,10 +14,14 @@ import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
   Link as LinkIcon,
-  DollarSign,
+  IndianRupee,
   Users,
   Copy,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -39,6 +43,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatter, dateFormatter } from "@/lib/utils";
+
+interface ReferredUsersPagination {
+  currentPage: number;
+  totalPages: number;
+  totalCount: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
 
 interface MediaBuyerDetails {
   id: string;
@@ -47,6 +60,8 @@ interface MediaBuyerDetails {
   createdAt: string;
   totalReferrals: number;
   totalCommission: number;
+  totalDeposits: string;
+  totalWithdrawals: string;
   assignedPromoCodes: {
     id: string;
     code: string;
@@ -71,6 +86,7 @@ interface MediaBuyerDetails {
     email: string | null;
     promoCodeUsed: string;
     joinedAt: string;
+    totalCommission: string;
     transactions: {
       id: string;
       type: string;
@@ -79,11 +95,15 @@ interface MediaBuyerDetails {
       createdAt: string;
     }[];
   }[];
+  referredUsersPagination: ReferredUsersPagination;
 }
 
 const MediaBuyerDetailsPage = () => {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const userPage = parseInt(searchParams.get("userPage") || "1");
+
   const [buyer, setBuyer] = useState<MediaBuyerDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [createLinkModalOpen, setCreateLinkModalOpen] = useState(false);
@@ -107,7 +127,10 @@ const MediaBuyerDetailsPage = () => {
 
   const fetchBuyerDetails = async () => {
     try {
-      const response = await fetch(`/api/affiliate/media-buyers/${params.id}`);
+      setLoading(true);
+      const response = await fetch(
+        `/api/affiliate/media-buyers/${params.id}?page=${userPage}&limit=10`
+      );
       if (!response.ok) throw new Error("Failed to fetch");
       const data = await response.json();
       setBuyer(data);
@@ -120,7 +143,7 @@ const MediaBuyerDetailsPage = () => {
 
   useEffect(() => {
     fetchBuyerDetails();
-  }, [params.id]);
+  }, [params.id, userPage]);
 
   const handleCreateLink = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,9 +210,20 @@ const MediaBuyerDetailsPage = () => {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
+  const formatAmount = (value: string | number) => {
+    const num = typeof value === "string" ? parseFloat(value) : value;
+    return formatter.format(num);
+  };
+
+  const goToUserPage = (page: number) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("userPage", page.toString());
+    router.push(url.pathname + url.search);
+  };
+
   if (loading) {
     return (
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto">
         <div className="flex justify-center items-center min-h-40">
           <div className="text-gray-600 text-lg">Loading...</div>
         </div>
@@ -199,7 +233,7 @@ const MediaBuyerDetailsPage = () => {
 
   if (!buyer) {
     return (
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto">
         <div className="text-center py-12">
           <h2 className="text-2xl font-bold mb-2">Media Buyer Not Found</h2>
           <Button asChild>
@@ -211,17 +245,17 @@ const MediaBuyerDetailsPage = () => {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center gap-4 mb-6">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto mt-2 sm:mt-0">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
         <Button variant="outline" size="sm" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back
         </Button>
-        <h1 className="text-2xl font-bold">{buyer.name || buyer.email}</h1>
+        <h1 className="text-xl sm:text-2xl font-bold truncate">{buyer.name || buyer.email}</h1>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <Card className="bg-gray-900 border-gray-800">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 sm:mb-8">
+        <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Referrals</CardTitle>
           </CardHeader>
@@ -232,46 +266,48 @@ const MediaBuyerDetailsPage = () => {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gray-900 border-gray-800">
+        <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Commission</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center">
-              <DollarSign className="h-5 w-5 text-yellow-500 mr-2" />
-              <span className="text-2xl font-bold">${buyer.totalCommission.toFixed(2)}</span>
+              <span className="text-2xl font-bold">{formatAmount(buyer.totalCommission)}</span>
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gray-900 border-gray-800">
+        <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Member Since</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-400">Total Deposits</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-lg">{new Date(buyer.createdAt).toLocaleDateString()}</div>
+            <div className="flex items-center">
+              <TrendingUp className="h-5 w-5 text-green-500 mr-2" />
+              <span className="text-2xl font-bold">{formatAmount(buyer.totalDeposits)}</span>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">Active Promo Codes</h2>
-        <Button onClick={() => setCreateLinkModalOpen(true)}>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+        <h2 className="text-lg sm:text-xl font-semibold">Active Promo Codes</h2>
+        <Button onClick={() => setCreateLinkModalOpen(true)} className="w-full sm:w-auto">
           <LinkIcon className="h-4 w-4 mr-2" />
           Create New Link
         </Button>
       </div>
 
-      <div className="rounded-lg shadow-sm border mb-8">
+      <div className="rounded-lg shadow-sm border mb-8 overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Code</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Bonus Details</TableHead>
-              <TableHead>Commission</TableHead>
-              <TableHead>Uses</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead className="whitespace-nowrap">Code</TableHead>
+              <TableHead className="whitespace-nowrap">Type</TableHead>
+              <TableHead className="whitespace-nowrap">Bonus Details</TableHead>
+              <TableHead className="whitespace-nowrap">Commission</TableHead>
+              <TableHead className="whitespace-nowrap">Uses</TableHead>
+              <TableHead className="whitespace-nowrap">Status</TableHead>
+              <TableHead className="whitespace-nowrap">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -284,13 +320,13 @@ const MediaBuyerDetailsPage = () => {
             ) : (
               buyer.assignedPromoCodes.map((promo) => (
                 <TableRow key={promo.id}>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <code className="bg-gray-800 px-2 py-1 rounded">{promo.code}</code>
                   </TableCell>
-                  <TableCell>{promo.type}</TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">{promo.type}</TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {promo.type === "DEPOSIT_BONUS" && promo.bonusPercentage && (
-                      <span>{promo.bonusPercentage}% up to ${promo.maxBonusAmount}</span>
+                      <span>{promo.bonusPercentage}% up to {formatAmount(promo.maxBonusAmount || "0")}</span>
                     )}
                     {promo.type === "FREE_SPINS" && promo.freeSpinsCount && (
                       <span>{promo.freeSpinsCount} spins {promo.freeSpinsGame && `on ${promo.freeSpinsGame}`}</span>
@@ -305,19 +341,19 @@ const MediaBuyerDetailsPage = () => {
                       <span className="block text-xs text-gray-400">Wager: {promo.wageringRequirement}x</span>
                     )}
                   </TableCell>
-                  <TableCell>{promo.commissionPercentage}%</TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">{promo.commissionPercentage}%</TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {promo.currentUses}
                     {promo.maxUses && ` / ${promo.maxUses}`}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <span className={`px-2 py-1 rounded-full text-xs ${
                       promo.status === "ACTIVE" ? "bg-green-900 text-green-300" : "bg-gray-800 text-gray-400"
                     }`}>
                       {promo.status}
                     </span>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <Button
                       variant="outline"
                       size="sm"
@@ -338,21 +374,22 @@ const MediaBuyerDetailsPage = () => {
         </Table>
       </div>
 
-      <h2 className="text-xl font-semibold mb-4">Referred Users</h2>
-      <div className="rounded-lg shadow-sm border">
+      <h2 className="text-lg sm:text-xl font-semibold mb-4">Referred Users</h2>
+      <div className="rounded-lg shadow-sm border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>User</TableHead>
-              <TableHead>Promo Code</TableHead>
-              <TableHead>Joined</TableHead>
-              <TableHead>Recent Transactions</TableHead>
+              <TableHead className="whitespace-nowrap">User</TableHead>
+              <TableHead className="whitespace-nowrap">Promo Code</TableHead>
+              <TableHead className="whitespace-nowrap">Joined</TableHead>
+              <TableHead className="whitespace-nowrap">Commission</TableHead>
+              <TableHead className="whitespace-nowrap">Transactions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {buyer.referredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-4 text-gray-500">
+                <TableCell colSpan={5} className="text-center py-4 text-gray-500">
                   No referred users yet.
                 </TableCell>
               </TableRow>
@@ -362,29 +399,30 @@ const MediaBuyerDetailsPage = () => {
                   <TableCell>
                     <div className="flex flex-col">
                       <span className="font-medium">{user.name || "Unnamed"}</span>
-                      <span className="text-sm text-gray-400">{user.email}</span>
+                      <span className="text-sm text-gray-400 truncate max-w-[200px]">{user.email}</span>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <code className="bg-gray-800 px-2 py-1 rounded text-sm">{user.promoCodeUsed}</code>
                   </TableCell>
-                  <TableCell>{new Date(user.joinedAt).toLocaleDateString()}</TableCell>
+                  <TableCell className="whitespace-nowrap">{dateFormatter.toIndianDateTime(user.joinedAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <span className="font-medium text-green-400">{formatAmount(user.totalCommission)}</span>
+                  </TableCell>
                   <TableCell>
                     {user.transactions.length > 0 ? (
-                      <div className="space-y-1">
-                        {user.transactions.slice(0, 2).map((tx) => (
-                          <div key={tx.id} className="text-sm flex justify-between gap-4">
-                            <span className="text-gray-400">{tx.type}</span>
-                            <span>${parseFloat(tx.amount).toFixed(2)}</span>
-                            <span className="text-gray-400">{new Date(tx.createdAt).toLocaleDateString()}</span>
-                          </div>
-                        ))}
-                        {user.transactions.length > 2 && (
-                          <div className="text-xs text-gray-500">+{user.transactions.length - 2} more</div>
-                        )}
-                      </div>
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="w-full sm:w-auto"
+                      >
+                        <Link href={`/affiliate-manager/media-buyers/${buyer.id}/user/${user.id}/transactions`}>
+                          View Transactions
+                        </Link>
+                      </Button>
                     ) : (
-                      <span className="text-gray-500 text-sm">No transactions</span>
+                      <span className="text-gray-500 text-sm pl-2">No transactions</span>
                     )}
                   </TableCell>
                 </TableRow>
@@ -392,10 +430,64 @@ const MediaBuyerDetailsPage = () => {
             )}
           </TableBody>
         </Table>
+
+        {buyer.referredUsersPagination && buyer.referredUsersPagination.totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-800">
+            <div className="text-sm text-gray-400">
+              Showing {(buyer.referredUsersPagination.currentPage - 1) * 10 + 1} to{" "}
+              {Math.min(buyer.referredUsersPagination.currentPage * 10, buyer.referredUsersPagination.totalCount)} of{" "}
+              {buyer.referredUsersPagination.totalCount} users
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => goToUserPage(buyer.referredUsersPagination.currentPage - 1)}
+                disabled={!buyer.referredUsersPagination.hasPrev}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              <div className="flex gap-1">
+                {Array.from(
+                  { length: Math.min(5, buyer.referredUsersPagination.totalPages) },
+                  (_, i) => {
+                    let pageNum: number;
+                    const total = buyer.referredUsersPagination.totalPages;
+                    const current = buyer.referredUsersPagination.currentPage;
+                    if (total <= 5) pageNum = i + 1;
+                    else if (current <= 3) pageNum = i + 1;
+                    else if (current >= total - 2) pageNum = total - 4 + i;
+                    else pageNum = current - 2 + i;
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={current === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => goToUserPage(pageNum)}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  }
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => goToUserPage(buyer.referredUsersPagination.currentPage + 1)}
+                disabled={!buyer.referredUsersPagination.hasNext}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <Dialog open={createLinkModalOpen} onOpenChange={setCreateLinkModalOpen}>
-        <DialogContent className="bg-gray-900 border-gray-800 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-black border-gray-800 max-h-[90vh] overflow-y-auto w-[95vw] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Create Tracking Link with Bonus</DialogTitle>
             <DialogDescription>
@@ -424,10 +516,6 @@ const MediaBuyerDetailsPage = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="DEPOSIT_BONUS">Deposit Bonus</SelectItem>
-                    <SelectItem value="FREE_SPINS">Free Spins</SelectItem>
-                    <SelectItem value="CASHBACK">Cashback</SelectItem>
-                    <SelectItem value="FREE_BET">Free Bet</SelectItem>
-                    <SelectItem value="COMBINED">Combined</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -447,7 +535,7 @@ const MediaBuyerDetailsPage = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="maxBonusAmount">Max Bonus Amount ($)</Label>
+                    <Label htmlFor="maxBonusAmount">Max Bonus Amount (₹)</Label>
                     <Input
                       id="maxBonusAmount"
                       type="number"
@@ -459,7 +547,7 @@ const MediaBuyerDetailsPage = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="minDepositAmount">Min Deposit Amount ($)</Label>
+                    <Label htmlFor="minDepositAmount">Min Deposit Amount (₹)</Label>
                     <Input
                       id="minDepositAmount"
                       type="number"
@@ -471,45 +559,6 @@ const MediaBuyerDetailsPage = () => {
                     />
                   </div>
                 </>
-              )}
-              {(newLinkForm.type === "FREE_SPINS" || newLinkForm.type === "COMBINED") && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="freeSpinsCount">Free Spins Count</Label>
-                    <Input
-                      id="freeSpinsCount"
-                      type="number"
-                      min="1"
-                      placeholder="50"
-                      value={newLinkForm.freeSpinsCount}
-                      onChange={(e) => setNewLinkForm({ ...newLinkForm, freeSpinsCount: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="freeSpinsGame">Game (optional)</Label>
-                    <Input
-                      id="freeSpinsGame"
-                      placeholder="Starburst"
-                      value={newLinkForm.freeSpinsGame}
-                      onChange={(e) => setNewLinkForm({ ...newLinkForm, freeSpinsGame: e.target.value })}
-                    />
-                  </div>
-                </>
-              )}
-              {newLinkForm.type === "CASHBACK" && (
-                <div className="space-y-2">
-                  <Label htmlFor="cashbackPercentage">Cashback Percentage (%)</Label>
-                  <Input
-                    id="cashbackPercentage"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="100"
-                    placeholder="10"
-                    value={newLinkForm.cashbackPercentage}
-                    onChange={(e) => setNewLinkForm({ ...newLinkForm, cashbackPercentage: e.target.value })}
-                  />
-                </div>
               )}
               <div className="space-y-2">
                 <Label htmlFor="wageringRequirement">Wagering Requirement (x)</Label>
@@ -545,7 +594,7 @@ const MediaBuyerDetailsPage = () => {
                   onChange={(e) => setNewLinkForm({ ...newLinkForm, maxUses: e.target.value })}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="startDate">Start Date</Label>
                   <Input
@@ -567,7 +616,7 @@ const MediaBuyerDetailsPage = () => {
                 </div>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button type="button" variant="outline" onClick={() => setCreateLinkModalOpen(false)}>
                 Cancel
               </Button>

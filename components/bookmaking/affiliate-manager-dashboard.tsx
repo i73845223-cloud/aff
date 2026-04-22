@@ -20,10 +20,12 @@ import {
   UserPlus,
   Link as LinkIcon,
   Users,
-  DollarSign,
+  IndianRupee,
   Eye,
   Copy,
   Check,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -44,6 +46,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatter, dateFormatter } from "@/lib/utils";
 
 interface MediaBuyer {
   id: string;
@@ -129,6 +132,11 @@ const AffiliateManagerDashboard = () => {
     endDate: "",
   });
 
+  const [globalTotals, setGlobalTotals] = useState({
+    totalDeposits: "0",
+    totalWithdrawals: "0",
+  });
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -146,6 +154,9 @@ const AffiliateManagerDashboard = () => {
       const data = await response.json();
       setMediaBuyers(data.users);
       setPagination(data.pagination);
+      if (data.globalTotals) {
+        setGlobalTotals(data.globalTotals);
+      }
     } catch (error) {
       console.error("Error fetching media buyers:", error);
       toast.error("Failed to load media buyers");
@@ -258,13 +269,18 @@ const AffiliateManagerDashboard = () => {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
+  const formatAmount = (value: string | number) => {
+    const num = typeof value === "string" ? parseFloat(value) : value;
+    return formatter.format(num);
+  };
+
   useEffect(() => {
     fetchMediaBuyers();
   }, []);
 
   if (!mounted) {
     return (
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto">
         <div className="flex justify-center items-center min-h-40">
           <div className="text-gray-600 text-lg">Loading...</div>
         </div>
@@ -282,14 +298,9 @@ const AffiliateManagerDashboard = () => {
   );
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Affiliate Manager Dashboard</h1>
-        <p className="text-gray-400">Manage media buyers and track their performance</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <Card className="bg-gray-900 border-gray-800">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto mt-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 sm:mb-8">
+        <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Media Buyers</CardTitle>
           </CardHeader>
@@ -300,7 +311,7 @@ const AffiliateManagerDashboard = () => {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gray-900 border-gray-800">
+        <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Referrals</CardTitle>
           </CardHeader>
@@ -311,22 +322,33 @@ const AffiliateManagerDashboard = () => {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gray-900 border-gray-800">
+        <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Commission</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center">
-              <DollarSign className="h-5 w-5 text-yellow-500 mr-2" />
-              <span className="text-2xl font-bold">${totalStats.totalCommission.toFixed(2)}</span>
+              <IndianRupee className="h-5 w-5 text-yellow-500 mr-2" />
+              <span className="text-2xl font-bold">{formatAmount(totalStats.totalCommission)}</span>
             </div>
           </CardContent>
         </Card>
+        <Card className="bg-black border-gray-800">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-gray-400">Total Deposits</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center">
+            <TrendingUp className="h-5 w-5 text-green-500 mr-2" />
+            <span className="text-2xl font-bold">{formatAmount(globalTotals.totalDeposits)}</span>
+          </div>
+        </CardContent>
+      </Card>
       </div>
 
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex-1 max-w-md">
-          <form onSubmit={handleSearch} className="flex gap-2">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div className="w-full sm:flex-1 sm:max-w-md">
+          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
@@ -342,27 +364,29 @@ const AffiliateManagerDashboard = () => {
                 </button>
               )}
             </div>
-            <Button type="submit">Search</Button>
-            <Button type="button" variant="outline" onClick={clearSearch}>
-              Clear
-            </Button>
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1 sm:flex-none">Search</Button>
+              <Button type="button" variant="outline" onClick={clearSearch} className="flex-1 sm:flex-none">
+                Clear
+              </Button>
+            </div>
           </form>
         </div>
-        <Button onClick={() => setCreateUserModalOpen(true)}>
+        <Button onClick={() => setCreateUserModalOpen(true)} className="w-full sm:w-auto">
           <UserPlus className="h-4 w-4 mr-2" />
           Add Media Buyer
         </Button>
       </div>
 
-      <div className="rounded-lg shadow-sm border">
+      <div className="rounded-lg shadow-sm border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Media Buyer</TableHead>
-              <TableHead>Referrals</TableHead>
-              <TableHead>Commission</TableHead>
-              <TableHead>Active Links</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead className="whitespace-nowrap">Media Buyer</TableHead>
+              <TableHead className="whitespace-nowrap">Referrals</TableHead>
+              <TableHead className="whitespace-nowrap">Commission</TableHead>
+              <TableHead className="whitespace-nowrap">Active Links</TableHead>
+              <TableHead className="whitespace-nowrap">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -386,15 +410,15 @@ const AffiliateManagerDashboard = () => {
                   <TableCell>
                     <div className="flex flex-col">
                       <div className="font-medium">{buyer.name || "Unnamed"}</div>
-                      <div className="text-sm text-gray-400">{buyer.email}</div>
-                      <div className="text-xs text-gray-500">Joined {new Date(buyer.createdAt).toLocaleDateString()}</div>
+                      <div className="text-sm text-gray-400 truncate max-w-[200px]">{buyer.email}</div>
+                      <div className="text-xs text-gray-500">Joined {dateFormatter.toIndianDateTime(buyer.createdAt)}</div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <span className="font-semibold">{buyer.totalReferrals}</span>
                   </TableCell>
                   <TableCell>
-                    <span className="font-semibold">${buyer.totalCommission.toFixed(2)}</span>
+                    <span className="font-semibold">{formatAmount(buyer.totalCommission)}</span>
                   </TableCell>
                   <TableCell>
                     <div className="space-y-1">
@@ -416,7 +440,7 @@ const AffiliateManagerDashboard = () => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <Button
                         variant="outline"
                         size="sm"
@@ -424,11 +448,12 @@ const AffiliateManagerDashboard = () => {
                           setSelectedBuyerForLink(buyer);
                           setCreateLinkModalOpen(true);
                         }}
+                        className="w-full sm:w-auto"
                       >
                         <LinkIcon className="h-4 w-4 mr-1" />
                         Create Link
                       </Button>
-                      <Button asChild variant="outline" size="sm">
+                      <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
                         <Link href={`/affiliate-manager/media-buyers/${buyer.id}`}>
                           <Eye className="h-4 w-4 mr-1" />
                           Details
@@ -443,16 +468,16 @@ const AffiliateManagerDashboard = () => {
         </Table>
 
         {!loading && mediaBuyers.length > 0 && (
-          <div className="flex items-center justify-between px-6 py-4 border-t">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 border-t">
             <div className="text-sm text-gray-400">
               Showing {(pagination.currentPage - 1) * 10 + 1} to {Math.min(pagination.currentPage * 10, pagination.totalCount)} of {pagination.totalCount} media buyers
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => goToPage(pagination.currentPage - 1)} disabled={!pagination.hasPrev}>
                 <ChevronLeft className="h-4 w-4" />
-                Previous
+                <span className="hidden sm:inline ml-1">Previous</span>
               </Button>
-              <div className="flex gap-1">
+              <div className="hidden sm:flex gap-1">
                 {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
                   let pageNum: number;
                   if (pagination.totalPages <= 5) pageNum = i + 1;
@@ -466,8 +491,11 @@ const AffiliateManagerDashboard = () => {
                   );
                 })}
               </div>
+              <span className="sm:hidden text-sm text-gray-400">
+                Page {pagination.currentPage} of {pagination.totalPages}
+              </span>
               <Button variant="outline" size="sm" onClick={() => goToPage(pagination.currentPage + 1)} disabled={!pagination.hasNext}>
-                Next
+                <span className="hidden sm:inline mr-1">Next</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
@@ -476,7 +504,7 @@ const AffiliateManagerDashboard = () => {
       </div>
 
       <Dialog open={createUserModalOpen} onOpenChange={setCreateUserModalOpen}>
-        <DialogContent className="bg-gray-900 border-gray-800">
+        <DialogContent className="bg-black border-gray-800 w-[95vw] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create Media Buyer Account</DialogTitle>
             <DialogDescription>
@@ -516,7 +544,7 @@ const AffiliateManagerDashboard = () => {
                 />
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button type="button" variant="outline" onClick={() => setCreateUserModalOpen(false)}>
                 Cancel
               </Button>
@@ -529,7 +557,7 @@ const AffiliateManagerDashboard = () => {
       </Dialog>
 
       <Dialog open={createLinkModalOpen} onOpenChange={setCreateLinkModalOpen}>
-        <DialogContent className="bg-gray-900 border-gray-800 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-black border-gray-800 max-h-[90vh] overflow-y-auto w-[95vw] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Create Tracking Link with Bonus</DialogTitle>
             <DialogDescription>
@@ -581,7 +609,7 @@ const AffiliateManagerDashboard = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="maxBonusAmount">Max Bonus Amount ($)</Label>
+                    <Label htmlFor="maxBonusAmount">Max Bonus Amount (₹)</Label>
                     <Input
                       id="maxBonusAmount"
                       type="number"
@@ -593,7 +621,7 @@ const AffiliateManagerDashboard = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="minDepositAmount">Min Deposit Amount ($)</Label>
+                    <Label htmlFor="minDepositAmount">Min Deposit Amount (₹)</Label>
                     <Input
                       id="minDepositAmount"
                       type="number"
@@ -679,7 +707,7 @@ const AffiliateManagerDashboard = () => {
                   onChange={(e) => setNewLinkForm({ ...newLinkForm, maxUses: e.target.value })}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="startDate">Start Date</Label>
                   <Input
@@ -701,7 +729,7 @@ const AffiliateManagerDashboard = () => {
                 </div>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button type="button" variant="outline" onClick={() => setCreateLinkModalOpen(false)}>
                 Cancel
               </Button>

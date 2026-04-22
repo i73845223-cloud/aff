@@ -27,6 +27,12 @@ export async function GET(request: NextRequest) {
     }),
   };
 
+  const allMatchingBuyers = await db.user.findMany({
+    where: whereClause,
+    select: { id: true },
+  });
+  const matchingBuyerIds = allMatchingBuyers.map(b => b.id);
+
   const [users, totalCount] = await Promise.all([
     db.user.findMany({
       where: whereClause,
@@ -66,6 +72,48 @@ export async function GET(request: NextRequest) {
     };
   });
 
+  const filteredAggregates = await db.transaction.groupBy({
+    by: ["type"],
+    where: {
+      status: "success",
+      category: "transaction",
+      user: {
+        userPromoCodes: {
+          some: {
+            promoCode: {
+              assignedUserId: { in: matchingBuyerIds },
+            },
+          },
+        },
+      },
+    },
+    _sum: { amount: true },
+  });
+
+  let totalDeposits = new Prisma.Decimal(0);
+  let totalWithdrawals = new Prisma.Decimal(0);
+
+  filteredAggregates.forEach((agg) => {
+    const amount = agg._sum.amount || new Prisma.Decimal(0);
+    if (agg.type === "deposit") totalDeposits = totalDeposits.add(amount);
+    else if (agg.type === "withdrawal") totalWithdrawals = totalWithdrawals.add(amount);
+  });
+
+  const totalCommissionAgg = await db.influencerEarning.aggregate({
+    where: {
+      influencerId: { in: matchingBuyerIds },
+    },
+    _sum: { amount: true },
+  });
+
+  const totalReferralsAgg = await db.userPromoCode.count({
+    where: {
+      promoCode: {
+        assignedUserId: { in: matchingBuyerIds },
+      },
+    },
+  });
+
   return NextResponse.json({
     users: enrichedUsers,
     pagination: {
@@ -74,6 +122,12 @@ export async function GET(request: NextRequest) {
       totalCount,
       hasNext: skip + limit < totalCount,
       hasPrev: page > 1,
+    },
+    globalTotals: {
+      totalDeposits: totalDeposits.toString(),
+      totalWithdrawals: totalWithdrawals.toString(),
+      totalCommission: totalCommissionAgg._sum.amount?.toString() || "0",
+      totalReferrals: totalReferralsAgg,
     },
   });
 }

@@ -17,3 +17,18 @@ export const formatter = {
     return formattedAmount.replace("₹", "₹ ");
   },
 };
+
+export const dateFormatter = {
+  toIndianDateTime: (date: Date | string) => {
+    const d = typeof date === "string" ? new Date(date) : date;
+    return d.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      year: "2-digit",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  },
+};

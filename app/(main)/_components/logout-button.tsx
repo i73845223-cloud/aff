@@ -16,7 +16,7 @@ export const LogoutButton = ({
 
     return (
         <span onClick={onClick} className="cursor-pointer">
-            <div className="hidden lg:block">
+            <div>
                 <UserButton />
             </div>
         </span>
