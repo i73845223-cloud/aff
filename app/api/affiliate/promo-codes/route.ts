@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
       wageringRequirement: wageringRequirement || null,
       commissionPercentage,
       assignedUserId: mediaBuyerId,
+      createdByUserId: session.user.id,
       maxUses: maxUses || null,
       startDate: new Date(startDate),
       endDate: endDate ? new Date(endDate) : null,

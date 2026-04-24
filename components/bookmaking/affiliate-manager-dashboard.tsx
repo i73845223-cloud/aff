@@ -21,7 +21,6 @@ import {
   Link as LinkIcon,
   Users,
   IndianRupee,
-  Eye,
   Copy,
   Check,
   TrendingUp,
@@ -54,9 +53,9 @@ interface MediaBuyer {
   email: string | null;
   createdAt: string;
   isBlocked: boolean;
-  _count: {
-    assignedPromoCodes: number;
-  };
+  totalNgr: number;
+  totalBalance: number;
+  _count: { assignedPromoCodes: number };
   assignedPromoCodes: {
     id: string;
     code: string;
@@ -72,12 +71,8 @@ interface MediaBuyer {
     freeSpinsGame: string | null;
     cashbackPercentage: number | null;
     wageringRequirement: number | null;
-    _count: {
-      userPromoCodes: number;
-    };
-    influencerEarnings: {
-      amount: string;
-    }[];
+    _count: { userPromoCodes: number };
+    influencerEarnings: { amount: string }[];
   }[];
   totalReferrals: number;
   totalCommission: number;
@@ -114,7 +109,30 @@ const AffiliateManagerDashboard = () => {
     name: "",
     email: "",
     password: "",
+    commissionPercent: "",
   });
+
+  const [myBalance, setMyBalance] = useState({
+    finalBalance: "0",
+    commissionPercent: 0,
+    netFlow: "0",
+    commissionAmount: "0",
+    totalOwnWithdrawals: "0",
+  });
+
+  const [balanceDetailsOpen, setBalanceDetailsOpen] = useState(false);
+  const [withdrawalsList, setWithdrawalsList] = useState<any[]>([]);
+  const [withdrawalsPagination, setWithdrawalsPagination] = useState({
+    page: 1,
+    totalPages: 1,
+    total: 0,
+  });
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
+  const [withdrawBuyer, setWithdrawBuyer] = useState<MediaBuyer | null>(null);
+  const [withdrawForm, setWithdrawForm] = useState({ amount: "", description: "" });
+  const [withdrawing, setWithdrawing] = useState(false);
 
   const [newLinkForm, setNewLinkForm] = useState({
     description: "",
@@ -141,7 +159,7 @@ const AffiliateManagerDashboard = () => {
     setMounted(true);
   }, []);
 
-  const fetchMediaBuyers = async (page: number = 1, search: string = "") => {
+  const fetchMediaBuyers = async (page = 1, search = "") => {
     try {
       setLoading(true);
       const params = new URLSearchParams({
@@ -149,20 +167,104 @@ const AffiliateManagerDashboard = () => {
         limit: "10",
         ...(search && { search }),
       });
-      const response = await fetch(`/api/affiliate/media-buyers?${params}`);
-      if (!response.ok) throw new Error(`Failed to fetch media buyers: ${response.status}`);
-      const data = await response.json();
+      const res = await fetch(`/api/affiliate/media-buyers?${params}`);
+      if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
+      const data = await res.json();
       setMediaBuyers(data.users);
       setPagination(data.pagination);
       if (data.globalTotals) {
         setGlobalTotals(data.globalTotals);
       }
     } catch (error) {
-      console.error("Error fetching media buyers:", error);
       toast.error("Failed to load media buyers");
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchMyBalance = async () => {
+    try {
+      const res = await fetch("/api/affiliate/my-balance");
+      if (res.ok) {
+        const data = await res.json();
+        setMyBalance({
+          finalBalance: data.finalBalance,
+          commissionPercent: data.commissionPercent,
+          netFlow: data.netFlow,
+          commissionAmount: data.commissionAmount,
+          totalOwnWithdrawals: data.totalOwnWithdrawals,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to fetch balance:", error);
+    }
+  };
+
+  const openBalanceDetails = async (page = 1) => {
+    setBalanceDetailsOpen(true);
+    setLoadingDetails(true);
+    try {
+      const res = await fetch(`/api/affiliate/my-balance?details=true&page=${page}&limit=10`);
+      if (res.ok) {
+        const data = await res.json();
+        setWithdrawalsList(data.withdrawals);
+        setWithdrawalsPagination({
+          page: data.withdrawalsPagination.page,
+          totalPages: data.withdrawalsPagination.totalPages,
+          total: data.withdrawalsPagination.total,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const handleDetailsPageChange = (newPage: number) => {
+    openBalanceDetails(newPage);
+  };
+
+  const handleWithdraw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!withdrawBuyer) return;
+    setWithdrawing(true);
+    try {
+      const res = await fetch(`/api/affiliate/media-buyers/${withdrawBuyer.id}/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: parseFloat(withdrawForm.amount),
+          description: withdrawForm.description,
+        }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed");
+      }
+      toast.success("Withdrawal created");
+      setWithdrawModalOpen(false);
+      setWithdrawBuyer(null);
+      setWithdrawForm({ amount: "", description: "" });
+      fetchMediaBuyers(pagination.currentPage, searchTerm);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to withdraw");
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMediaBuyers();
+  }, []);
+
+  useEffect(() => {
+    fetchMyBalance();
+  }, []);
+
+  const formatAmount = (value: string | number) => {
+    const num = typeof value === "string" ? parseFloat(value) : value;
+    return formatter.format(num);
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -183,21 +285,21 @@ const AffiliateManagerDashboard = () => {
     e.preventDefault();
     setCreating(true);
     try {
-      const response = await fetch("/api/affiliate/media-buyers", {
+      const res = await fetch("/api/affiliate/media-buyers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newUserForm),
       });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create media buyer");
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed");
       }
-      toast.success("Media buyer created successfully");
+      toast.success("Media buyer created");
       setCreateUserModalOpen(false);
-      setNewUserForm({ name: "", email: "", password: "" });
+      setNewUserForm({ name: "", email: "", password: "", commissionPercent: "" });
       fetchMediaBuyers(pagination.currentPage, searchTerm);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create media buyer");
+      toast.error(error instanceof Error ? error.message : "Failed");
     } finally {
       setCreating(false);
     }
@@ -225,16 +327,16 @@ const AffiliateManagerDashboard = () => {
         endDate: newLinkForm.endDate || null,
       };
 
-      const response = await fetch("/api/affiliate/promo-codes", {
+      const res = await fetch("/api/affiliate/promo-codes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create link");
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed");
       }
-      const data = await response.json();
+      const data = await res.json();
       toast.success(`Link created: ${data.code}`);
       setCreateLinkModalOpen(false);
       setSelectedBuyerForLink(null);
@@ -255,7 +357,7 @@ const AffiliateManagerDashboard = () => {
       });
       fetchMediaBuyers(pagination.currentPage, searchTerm);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create link");
+      toast.error(error instanceof Error ? error.message : "Failed");
     } finally {
       setCreating(false);
     }
@@ -265,18 +367,9 @@ const AffiliateManagerDashboard = () => {
     const signupUrl = `https://alt.win/r/${code}`;
     navigator.clipboard.writeText(signupUrl);
     setCopiedCode(code);
-    toast.success("Signup link copied to clipboard");
+    toast.success("Signup link copied");
     setTimeout(() => setCopiedCode(null), 2000);
   };
-
-  const formatAmount = (value: string | number) => {
-    const num = typeof value === "string" ? parseFloat(value) : value;
-    return formatter.format(num);
-  };
-
-  useEffect(() => {
-    fetchMediaBuyers();
-  }, []);
 
   if (!mounted) {
     return (
@@ -299,6 +392,83 @@ const AffiliateManagerDashboard = () => {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto mt-2">
+      <div className="mb-6">
+        <Card className="bg-black border-gray-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-medium text-white text-center sm:text-left">Available Balance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
+              <div className="text-3xl font-bold text-green-400">
+                {formatAmount(myBalance.finalBalance)}
+              </div>
+              <Button variant="outline" onClick={() => openBalanceDetails()}>
+                Details
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog open={balanceDetailsOpen} onOpenChange={setBalanceDetailsOpen}>
+        <DialogContent className="bg-black border-gray-800 max-h-[80vh] overflow-y-auto w-[95vw] sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Balance Calculation</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="text-gray-400">NGR</div>
+                <div className="text-right font-mono">{formatAmount(myBalance.netFlow)}</div>
+                <div className="text-gray-400">Rate</div>
+                <div className="text-right font-mono">{myBalance.commissionPercent}%</div>
+                <div className="text-gray-400">Withdrawals</div>
+                <div className="text-right font-mono text-yellow-400">– {formatAmount(myBalance.totalOwnWithdrawals)}</div>
+                <hr className="col-span-2 border-gray-700" />
+                <div className="text-white font-semibold">Available Balance</div>
+                <div className="text-right font-mono font-bold text-green-400">
+                  {formatAmount(myBalance.finalBalance)}
+                </div>
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-400 mb-2">Withdrawals</h3>
+              {loadingDetails ? (
+                <div className="text-center py-4 text-gray-400">Loading...</div>
+              ) : withdrawalsList.length === 0 ? (
+                <div className="text-center py-4 text-gray-500">No withdrawals yet.</div>
+              ) : (
+                <>
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {withdrawalsList.map((w: any) => (
+                      <div key={w.id} className="flex justify-between items-center border-b border-gray-800 pb-2 text-sm">
+                        <div className="text-gray-300">{dateFormatter.toIndianDateTime(w.createdAt)}</div>
+                        <div className="text-yellow-400 font-mono">{formatAmount(w.amount)}</div>
+                        <div className="text-gray-500 text-xs">{w.description || ''}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {withdrawalsPagination.totalPages > 1 && (
+                    <div className="flex items-center justify-between mt-4 pt-2 border-t border-gray-700">
+                      <div className="text-xs text-gray-400">
+                        Page {withdrawalsPagination.page} of {withdrawalsPagination.totalPages}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" disabled={withdrawalsPagination.page <= 1} onClick={() => handleDetailsPageChange(withdrawalsPagination.page - 1)}>Previous</Button>
+                        <Button variant="outline" size="sm" disabled={withdrawalsPagination.page >= withdrawalsPagination.totalPages} onClick={() => handleDetailsPageChange(withdrawalsPagination.page + 1)}>Next</Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBalanceDetailsOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 sm:mb-8">
         <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
@@ -324,26 +494,24 @@ const AffiliateManagerDashboard = () => {
         </Card>
         <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Total Commission</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-400">Total NGR</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center">
-              <IndianRupee className="h-5 w-5 text-yellow-500 mr-2" />
-              <span className="text-2xl font-bold">{formatAmount(totalStats.totalCommission)}</span>
+              <span className="text-2xl font-bold text-sky-400">{formatAmount(myBalance.netFlow)}</span>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-black border-gray-800">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-gray-400">Total Deposits</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center">
-            <TrendingUp className="h-5 w-5 text-green-500 mr-2" />
-            <span className="text-2xl font-bold">{formatAmount(globalTotals.totalDeposits)}</span>
-          </div>
-        </CardContent>
-      </Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Total Deposits</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center">
+              <span className="text-2xl font-bold text-orange-400">{formatAmount(globalTotals.totalDeposits)}</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
@@ -366,9 +534,7 @@ const AffiliateManagerDashboard = () => {
             </div>
             <div className="flex gap-2">
               <Button type="submit" className="flex-1 sm:flex-none">Search</Button>
-              <Button type="button" variant="outline" onClick={clearSearch} className="flex-1 sm:flex-none">
-                Clear
-              </Button>
+              <Button type="button" variant="outline" onClick={clearSearch} className="flex-1 sm:flex-none">Clear</Button>
             </div>
           </form>
         </div>
@@ -384,15 +550,15 @@ const AffiliateManagerDashboard = () => {
             <TableRow>
               <TableHead className="whitespace-nowrap">Media Buyer</TableHead>
               <TableHead className="whitespace-nowrap">Referrals</TableHead>
-              <TableHead className="whitespace-nowrap">Commission</TableHead>
-              <TableHead className="whitespace-nowrap">Active Links</TableHead>
+              <TableHead className="whitespace-nowrap">Total NGR</TableHead>
+              <TableHead className="whitespace-nowrap">Balance</TableHead>
               <TableHead className="whitespace-nowrap">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8">
+                <TableCell colSpan={6} className="text-center py-8">
                   <div className="flex justify-center">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
                   </div>
@@ -400,13 +566,17 @@ const AffiliateManagerDashboard = () => {
               </TableRow>
             ) : mediaBuyers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-gray-500">
+                <TableCell colSpan={6} className="text-center py-8 text-gray-500">
                   No media buyers found.
                 </TableCell>
               </TableRow>
             ) : (
               mediaBuyers.map((buyer) => (
-                <TableRow key={buyer.id}>
+                <TableRow
+                  key={buyer.id}
+                  className="cursor-pointer hover:bg-gray-900 transition-colors"
+                  onClick={() => router.push(`/affiliate-manager/media-buyers/${buyer.id}`)}
+                >
                   <TableCell>
                     <div className="flex flex-col">
                       <div className="font-medium">{buyer.name || "Unnamed"}</div>
@@ -414,37 +584,16 @@ const AffiliateManagerDashboard = () => {
                       <div className="text-xs text-gray-500">Joined {dateFormatter.toIndianDateTime(buyer.createdAt)}</div>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <span className="font-semibold">{buyer.totalReferrals}</span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="font-semibold">{formatAmount(buyer.totalCommission)}</span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      {buyer.assignedPromoCodes.filter(p => p.status === "ACTIVE").map(promo => (
-                        <div key={promo.id} className="flex items-center gap-1 text-sm">
-                          <code className="bg-gray-800 px-1 py-0.5 rounded">{promo.code}</code>
-                          <span className="text-gray-400">({promo._count.userPromoCodes} uses)</span>
-                          <button
-                            onClick={() => copyToClipboard(promo.code)}
-                            className="text-gray-400 hover:text-white"
-                          >
-                            {copiedCode === promo.code ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                          </button>
-                        </div>
-                      ))}
-                      {buyer.assignedPromoCodes.filter(p => p.status === "ACTIVE").length === 0 && (
-                        <span className="text-gray-500 text-sm">No active links</span>
-                      )}
-                    </div>
-                  </TableCell>
+                  <TableCell><span className="font-semibold">{buyer.totalReferrals}</span></TableCell>
+                  <TableCell><span className="font-semibold">{formatAmount(buyer.totalNgr)}</span></TableCell>
+                  <TableCell><span className="font-semibold">{formatAmount(buyer.totalBalance)}</span></TableCell>
                   <TableCell>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setSelectedBuyerForLink(buyer);
                           setCreateLinkModalOpen(true);
                         }}
@@ -453,11 +602,18 @@ const AffiliateManagerDashboard = () => {
                         <LinkIcon className="h-4 w-4 mr-1" />
                         Create Link
                       </Button>
-                      <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
-                        <Link href={`/affiliate-manager/media-buyers/${buyer.id}`}>
-                          <Eye className="h-4 w-4 mr-1" />
-                          Details
-                        </Link>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setWithdrawBuyer(buyer);
+                          setWithdrawModalOpen(true);
+                        }}
+                        className="w-full sm:w-auto"
+                      >
+                        <TrendingDown className="h-4 w-4 mr-1" />
+                        Withdraw
                       </Button>
                     </div>
                   </TableCell>
@@ -507,50 +663,30 @@ const AffiliateManagerDashboard = () => {
         <DialogContent className="bg-black border-gray-800 w-[95vw] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create Media Buyer Account</DialogTitle>
-            <DialogDescription>
-              Add a new media buyer who can create and manage their own affiliate links.
-            </DialogDescription>
+            <DialogDescription>Add a new media buyer.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateUser}>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
-                  value={newUserForm.name}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, name: e.target.value })}
-                  required
-                />
+                <Input id="name" value={newUserForm.name} onChange={(e) => setNewUserForm({ ...newUserForm, name: e.target.value })} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={newUserForm.email}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })}
-                  required
-                />
+                <Input id="email" type="email" value={newUserForm.email} onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={newUserForm.password}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
-                  required
-                  minLength={8}
-                />
+                <Input id="password" type="password" value={newUserForm.password} onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })} required minLength={8} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="commissionPercent">Commission Percentage (%)</Label>
+                <Input id="commissionPercent" type="number" step="0.1" min="0" max="100" value={newUserForm.commissionPercent} onChange={(e) => setNewUserForm({ ...newUserForm, commissionPercent: e.target.value })} />
               </div>
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button type="button" variant="outline" onClick={() => setCreateUserModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={creating}>
-                {creating ? "Creating..." : "Create Media Buyer"}
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setCreateUserModalOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={creating}>{creating ? "Creating..." : "Create Media Buyer"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -593,6 +729,7 @@ const AffiliateManagerDashboard = () => {
                   </SelectContent>
                 </Select>
               </div>
+
               {(newLinkForm.type === "DEPOSIT_BONUS" || newLinkForm.type === "COMBINED") && (
                 <>
                   <div className="space-y-2">
@@ -634,6 +771,7 @@ const AffiliateManagerDashboard = () => {
                   </div>
                 </>
               )}
+
               {(newLinkForm.type === "FREE_SPINS" || newLinkForm.type === "COMBINED") && (
                 <>
                   <div className="space-y-2">
@@ -658,6 +796,7 @@ const AffiliateManagerDashboard = () => {
                   </div>
                 </>
               )}
+
               {newLinkForm.type === "CASHBACK" && (
                 <div className="space-y-2">
                   <Label htmlFor="cashbackPercentage">Cashback Percentage (%)</Label>
@@ -673,6 +812,7 @@ const AffiliateManagerDashboard = () => {
                   />
                 </div>
               )}
+
               <div className="space-y-2">
                 <Label htmlFor="wageringRequirement">Wagering Requirement (x)</Label>
                 <Input
@@ -682,19 +822,6 @@ const AffiliateManagerDashboard = () => {
                   placeholder="35"
                   value={newLinkForm.wageringRequirement}
                   onChange={(e) => setNewLinkForm({ ...newLinkForm, wageringRequirement: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="commission">Commission Percentage (%)</Label>
-                <Input
-                  id="commission"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={newLinkForm.commissionPercentage}
-                  onChange={(e) => setNewLinkForm({ ...newLinkForm, commissionPercentage: e.target.value })}
-                  required
                 />
               </div>
               <div className="space-y-2">
@@ -736,6 +863,43 @@ const AffiliateManagerDashboard = () => {
               <Button type="submit" disabled={creating}>
                 {creating ? "Creating..." : "Generate Link"}
               </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={withdrawModalOpen} onOpenChange={setWithdrawModalOpen}>
+        <DialogContent className="bg-black border-gray-800 w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Withdraw for {withdrawBuyer?.name || withdrawBuyer?.email}</DialogTitle>
+            <DialogDescription>Create a withdrawal transaction for this media buyer.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleWithdraw}>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="withdrawAmount">Amount (₹)</Label>
+                <Input
+                  id="withdrawAmount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={withdrawForm.amount}
+                  onChange={(e) => setWithdrawForm({ ...withdrawForm, amount: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="withdrawDescription">Description (optional)</Label>
+                <Input
+                  id="withdrawDescription"
+                  value={withdrawForm.description}
+                  onChange={(e) => setWithdrawForm({ ...withdrawForm, description: e.target.value })}
+                />
+              </div>
+            </div>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button type="button" variant="outline" onClick={() => setWithdrawModalOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={withdrawing}>{withdrawing ? 'Processing...' : 'Confirm Withdrawal'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

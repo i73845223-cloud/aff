@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     where: whereClause,
     select: { id: true },
   });
-  const matchingBuyerIds = allMatchingBuyers.map(b => b.id);
+  const matchingBuyerIds = allMatchingBuyers.map((b) => b.id);
 
   const [users, totalCount] = await Promise.all([
     db.user.findMany({
@@ -41,6 +41,9 @@ export async function GET(request: NextRequest) {
           include: {
             _count: { select: { userPromoCodes: true } },
             influencerEarnings: true,
+            userPromoCodes: {
+              select: { userId: true },
+            },
           },
         },
       },
@@ -51,26 +54,77 @@ export async function GET(request: NextRequest) {
     db.user.count({ where: whereClause }),
   ]);
 
-  const enrichedUsers = users.map((user) => {
-    const totalReferrals = user.assignedPromoCodes.reduce(
-      (sum, code) => sum + code._count.userPromoCodes,
-      0
-    );
-    const totalCommission = user.assignedPromoCodes.reduce(
-      (sum, code) =>
-        sum +
-        code.influencerEarnings.reduce(
-          (s, e) => s + Number(e.amount),
-          0
+  const enrichedUsers = await Promise.all(
+    users.map(async (user) => {
+      const totalReferrals = user.assignedPromoCodes.reduce(
+        (sum, code) => sum + code._count.userPromoCodes,
+        0
+      );
+      const totalCommission = user.assignedPromoCodes.reduce(
+        (sum, code) =>
+          sum +
+          code.influencerEarnings.reduce(
+            (s, e) => s + Number(e.amount),
+            0
+          ),
+        0
+      );
+
+      const referredIds = [
+        ...new Set(
+          user.assignedPromoCodes.flatMap((code) =>
+            code.userPromoCodes.map((upc) => upc.userId)
+          )
         ),
-      0
-    );
-    return {
-      ...user,
-      totalReferrals,
-      totalCommission,
-    };
-  });
+      ];
+
+      let ngr = 0;
+      if (referredIds.length > 0) {
+        const [wRaw, dRaw] = await Promise.all([
+          db.transaction.aggregate({
+            where: {
+              userId: { in: referredIds },
+              type: "withdrawal",
+              status: "success",
+              category: { not: "transaction" },
+            },
+            _sum: { amount: true },
+          }),
+          db.transaction.aggregate({
+            where: {
+              userId: { in: referredIds },
+              type: "deposit",
+              status: { in: ["success", "pending"] },
+              category: { not: "transaction" },
+            },
+            _sum: { amount: true },
+          }),
+        ]);
+        const w = wRaw._sum.amount || new Prisma.Decimal(0);
+        const d = dRaw._sum.amount || new Prisma.Decimal(0);
+        ngr = Number(w.minus(d));
+      }
+
+      const commissionPercent = user.commissionPercent ?? 0;
+      const ownW = await db.transaction.aggregate({
+        where: { userId: user.id, type: "withdrawal", status: "success" },
+        _sum: { amount: true },
+      });
+      const ownWithdrawals = ownW._sum.amount || new Prisma.Decimal(0);
+      const balance = new Prisma.Decimal(ngr)
+        .mul(commissionPercent)
+        .div(100)
+        .minus(ownWithdrawals);
+
+      return {
+        ...user,
+        totalReferrals,
+        totalCommission,
+        totalNgr: ngr,
+        totalBalance: Number(balance),
+      };
+    })
+  );
 
   const filteredAggregates = await db.transaction.groupBy({
     by: ["type"],
@@ -100,18 +154,12 @@ export async function GET(request: NextRequest) {
   });
 
   const totalCommissionAgg = await db.influencerEarning.aggregate({
-    where: {
-      influencerId: { in: matchingBuyerIds },
-    },
+    where: { influencerId: { in: matchingBuyerIds } },
     _sum: { amount: true },
   });
 
   const totalReferralsAgg = await db.userPromoCode.count({
-    where: {
-      promoCode: {
-        assignedUserId: { in: matchingBuyerIds },
-      },
-    },
+    where: { promoCode: { assignedUserId: { in: matchingBuyerIds } } },
   });
 
   return NextResponse.json({
@@ -139,7 +187,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { name, email, password } = body;
+  const { name, email, password, commissionPercent } = body;
 
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
@@ -161,6 +209,7 @@ export async function POST(request: NextRequest) {
       email,
       password: hashedPassword,
       role: "MEDIA",
+      commissionPercent: commissionPercent ? parseFloat(commissionPercent) : null,
     },
   });
 

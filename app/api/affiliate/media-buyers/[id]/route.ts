@@ -70,12 +70,43 @@ export async function GET(
     earningsByUser.map((e) => [e.sourceUserId, e._sum.amount || new Prisma.Decimal(0)])
   );
 
+  const ngrWithdrawals = await db.transaction.groupBy({
+    by: ["userId"],
+    where: {
+      userId: { in: referredUserIds },
+      type: "withdrawal",
+      status: "success",
+      category: { not: "transaction" },
+    },
+    _sum: { amount: true },
+  });
+
+  const ngrDeposits = await db.transaction.groupBy({
+    by: ["userId"],
+    where: {
+      userId: { in: referredUserIds },
+      type: "deposit",
+      status: { in: ["success", "pending"] },
+      category: { not: "transaction" },
+    },
+    _sum: { amount: true },
+  });
+
+  const ngrMap = new Map<string, Prisma.Decimal>(
+    ngrWithdrawals.map((r) => [r.userId, r._sum.amount || new Prisma.Decimal(0)])
+  );
+  ngrDeposits.forEach((r) => {
+    const prev = ngrMap.get(r.userId) || new Prisma.Decimal(0);
+    ngrMap.set(r.userId, prev.minus(r._sum.amount || new Prisma.Decimal(0)));
+  });
+
   const allReferredUsers = mediaBuyer.assignedPromoCodes.flatMap((code) =>
     code.userPromoCodes.map((upc) => ({
       ...upc.user,
       promoCodeUsed: code.code,
       joinedAt: upc.lastUsedAt || upc.user.createdAt,
       totalCommission: commissionMap.get(upc.user.id) || new Prisma.Decimal(0),
+      ngr: ngrMap.get(upc.user.id) || new Prisma.Decimal(0),
     }))
   );
 
@@ -99,7 +130,7 @@ export async function GET(
     by: ["type"],
     where: {
       status: "success",
-      category: "transaction",
+      category: "transactions",
       user: {
         userPromoCodes: {
           some: {
