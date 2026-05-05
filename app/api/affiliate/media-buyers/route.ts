@@ -56,7 +56,6 @@ export async function GET(request: NextRequest) {
     db.user.count({ where: whereClause }),
   ]);
 
-  // Compute totalNGR and totalBalance for each buyer (as before)
   const enrichedUsers = await Promise.all(
     users.map(async (user) => {
       const totalReferrals = user.assignedPromoCodes.reduce(
@@ -129,7 +128,6 @@ export async function GET(request: NextRequest) {
     })
   );
 
-  // Global totals (scoped to the same media buyers)
   const filteredAggregates = await db.transaction.groupBy({
     by: ["type"],
     where: {
@@ -215,6 +213,7 @@ export async function POST(request: NextRequest) {
       role: "MEDIA",
       commissionPercent: commissionPercent ? parseFloat(commissionPercent) : null,
       createdByUserId: session.user.id,
+      emailVerified: new Date(),
     },
   });
 
