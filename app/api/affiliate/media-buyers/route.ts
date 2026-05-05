@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const affiliateId = session.user.id;
   const searchParams = request.nextUrl.searchParams;
   const page = parseInt(searchParams.get("page") || "1");
   const limit = parseInt(searchParams.get("limit") || "10");
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
 
   const whereClause: Prisma.UserWhereInput = {
     role: "MEDIA",
+    createdByUserId: affiliateId,
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
@@ -54,6 +56,7 @@ export async function GET(request: NextRequest) {
     db.user.count({ where: whereClause }),
   ]);
 
+  // Compute totalNGR and totalBalance for each buyer (as before)
   const enrichedUsers = await Promise.all(
     users.map(async (user) => {
       const totalReferrals = user.assignedPromoCodes.reduce(
@@ -126,6 +129,7 @@ export async function GET(request: NextRequest) {
     })
   );
 
+  // Global totals (scoped to the same media buyers)
   const filteredAggregates = await db.transaction.groupBy({
     by: ["type"],
     where: {
@@ -210,6 +214,7 @@ export async function POST(request: NextRequest) {
       password: hashedPassword,
       role: "MEDIA",
       commissionPercent: commissionPercent ? parseFloat(commissionPercent) : null,
+      createdByUserId: session.user.id,
     },
   });
 
