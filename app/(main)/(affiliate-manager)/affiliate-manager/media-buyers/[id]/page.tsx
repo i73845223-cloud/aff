@@ -804,6 +804,23 @@ const MediaBuyerDetailsPage = () => {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="ftdFee">FTD Fee (₹)</Label>
+                <Input
+                  id="ftdFee"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 500"
+                  value={newLinkForm.commissionPercentage || ""}
+                  onChange={(e) =>
+                    setNewLinkForm({
+                      ...newLinkForm,
+                      commissionPercentage: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="type">Bonus Type</Label>
                 <Select
                   value={newLinkForm.type}
