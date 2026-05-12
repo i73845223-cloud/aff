@@ -3,46 +3,28 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft,
-  Link as LinkIcon,
-  Users,
-  Copy,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  TrendingUp,
-  TrendingDown,
+  ArrowLeft, Link as LinkIcon, Users, Copy, Check,
+  ChevronLeft, ChevronRight, TrendingDown, IndianRupee,
+  UserPlus, Banknote, Download,
+  DollarSign,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatter, dateFormatter } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface ReferredUsersPagination {
   currentPage: number;
@@ -61,6 +43,13 @@ interface MediaBuyerDetails {
   totalCommission: number;
   totalDeposits: string;
   totalWithdrawals: string;
+  totalNgr: string;
+  totalBalance: string;
+  commissionPercent: number;
+  totalOwnWithdrawals: string;
+  totalFtdCommission: number;
+  totalRegistrations: number;
+  totalFirstDeposits: number;
   assignedPromoCodes: {
     id: string;
     code: string;
@@ -78,6 +67,9 @@ interface MediaBuyerDetails {
     status: string;
     _count: { userPromoCodes: number };
     influencerEarnings: { amount: string }[];
+    ftdCount: number;
+    ftdCommission: string;
+    registrations: number;
   }[];
   referredUsers: {
     id: string;
@@ -86,13 +78,9 @@ interface MediaBuyerDetails {
     promoCodeUsed: string;
     joinedAt: string;
     totalCommission: string;
-    ngr: string;
+    hasDeposited: boolean;
     transactions: {
-      id: string;
-      type: string;
-      amount: string;
-      status: string;
-      createdAt: string;
+      id: string; type: string; amount: string; status: string; createdAt: string;
     }[];
   }[];
   referredUsersPagination: ReferredUsersPagination;
@@ -101,36 +89,30 @@ interface MediaBuyerDetails {
 const MediaBuyerDetailsPage = () => {
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const userPage = parseInt(searchParams.get("userPage") || "1");
+  const searchParamsHook = useSearchParams();
+  const userPage = parseInt(searchParamsHook.get("userPage") || "1");
 
   const [buyer, setBuyer] = useState<MediaBuyerDetails | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [hasDepositedFilter, setHasDepositedFilter] = useState("all");
+
   const [createLinkModalOpen, setCreateLinkModalOpen] = useState(false);
+  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
+  const [balanceDetailsOpen, setBalanceDetailsOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const [buyerBalance, setBuyerBalance] = useState({
-    finalBalance: "0",
-    commissionPercent: 0,
-    netFlow: "0",
-    commissionAmount: "0",
-    totalOwnWithdrawals: "0",
-  });
-
-  const [balanceDetailsOpen, setBalanceDetailsOpen] = useState(false);
   const [withdrawalsList, setWithdrawalsList] = useState<any[]>([]);
   const [withdrawalsPagination, setWithdrawalsPagination] = useState({
-    page: 1,
-    totalPages: 1,
-    total: 0,
+    page: 1, totalPages: 1, total: 0,
   });
   const [loadingDetails, setLoadingDetails] = useState(false);
 
-  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
   const [withdrawForm, setWithdrawForm] = useState({ amount: "", description: "" });
-  const [withdrawing, setWithdrawing] = useState(false);
-
   const [newLinkForm, setNewLinkForm] = useState({
     description: "",
     type: "DEPOSIT_BONUS",
@@ -150,8 +132,16 @@ const MediaBuyerDetailsPage = () => {
   const fetchBuyerDetails = async () => {
     try {
       setLoading(true);
+      const paramsObj = new URLSearchParams({
+        page: userPage.toString(),
+        limit: "10",
+      });
+      if (dateFrom) paramsObj.set("dateFrom", dateFrom);
+      if (dateTo) paramsObj.set("dateTo", dateTo);
+      paramsObj.set("hasDeposited", hasDepositedFilter);
+
       const response = await fetch(
-        `/api/affiliate/media-buyers/${params.id}?page=${userPage}&limit=10`
+        `/api/affiliate/media-buyers/${params.id}?${paramsObj}`
       );
       if (!response.ok) throw new Error("Failed to fetch");
       const data = await response.json();
@@ -163,89 +153,32 @@ const MediaBuyerDetailsPage = () => {
     }
   };
 
-  const fetchBuyerBalance = async () => {
-    try {
-      const res = await fetch(
-        `/api/affiliate/media-buyers/${params.id}/balance`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setBuyerBalance({
-          finalBalance: data.finalBalance,
-          commissionPercent: data.commissionPercent,
-          netFlow: data.netFlow,
-          commissionAmount: data.commissionAmount,
-          totalOwnWithdrawals: data.totalOwnWithdrawals,
-        });
-      }
-    } catch (error) {
-      console.error("Failed to fetch buyer balance", error);
-    }
-  };
-
   const openBalanceDetails = async (page = 1) => {
     setBalanceDetailsOpen(true);
     setLoadingDetails(true);
     try {
+      const paramsObj = new URLSearchParams({
+        details: 'true',
+        page: page.toString(),
+        limit: '10',
+      });
+      if (dateFrom) paramsObj.set('dateFrom', dateFrom);
+      if (dateTo) paramsObj.set('dateTo', dateTo);
       const res = await fetch(
-        `/api/affiliate/media-buyers/${params.id}/balance?details=true&page=${page}&limit=10`
+        `/api/affiliate/media-buyers/${params.id}/balance?${paramsObj}`
       );
       if (res.ok) {
-        const data = await res.json();
-        setWithdrawalsList(data.withdrawals);
+        const d = await res.json();
+        setWithdrawalsList(d.withdrawals);
         setWithdrawalsPagination({
-          page: data.withdrawalsPagination.page,
-          totalPages: data.withdrawalsPagination.totalPages,
-          total: data.withdrawalsPagination.total,
+          page: d.withdrawalsPagination.page,
+          totalPages: d.withdrawalsPagination.totalPages,
+          total: d.withdrawalsPagination.total,
         });
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingDetails(false);
-    }
+    } catch (err) { console.error(err); }
+    finally { setLoadingDetails(false); }
   };
-
-  const handleDetailsPageChange = (newPage: number) => {
-    openBalanceDetails(newPage);
-  };
-
-  const handleWithdraw = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!buyer) return;
-    setWithdrawing(true);
-    try {
-      const res = await fetch(
-        `/api/affiliate/media-buyers/${buyer.id}/withdraw`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount: parseFloat(withdrawForm.amount),
-            description: withdrawForm.description,
-          }),
-        }
-      );
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed");
-      }
-      toast.success("Withdrawal created");
-      setWithdrawModalOpen(false);
-      setWithdrawForm({ amount: "", description: "" });
-      fetchBuyerDetails();
-      fetchBuyerBalance();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to withdraw");
-    } finally {
-      setWithdrawing(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchBuyerDetails();
-    fetchBuyerBalance();
-  }, [params.id, userPage]);
 
   const handleCreateLink = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,29 +189,15 @@ const MediaBuyerDetailsPage = () => {
         mediaBuyerId: buyer.id,
         description: newLinkForm.description,
         type: newLinkForm.type,
-        bonusPercentage: newLinkForm.bonusPercentage
-          ? parseFloat(newLinkForm.bonusPercentage)
-          : null,
-        maxBonusAmount: newLinkForm.maxBonusAmount
-          ? parseFloat(newLinkForm.maxBonusAmount)
-          : null,
-        minDepositAmount: newLinkForm.minDepositAmount
-          ? parseFloat(newLinkForm.minDepositAmount)
-          : null,
-        freeSpinsCount: newLinkForm.freeSpinsCount
-          ? parseInt(newLinkForm.freeSpinsCount)
-          : null,
+        bonusPercentage: newLinkForm.bonusPercentage ? parseFloat(newLinkForm.bonusPercentage) : null,
+        maxBonusAmount: newLinkForm.maxBonusAmount ? parseFloat(newLinkForm.maxBonusAmount) : null,
+        minDepositAmount: newLinkForm.minDepositAmount ? parseFloat(newLinkForm.minDepositAmount) : null,
+        freeSpinsCount: newLinkForm.freeSpinsCount ? parseInt(newLinkForm.freeSpinsCount) : null,
         freeSpinsGame: newLinkForm.freeSpinsGame || null,
-        cashbackPercentage: newLinkForm.cashbackPercentage
-          ? parseFloat(newLinkForm.cashbackPercentage)
-          : null,
-        wageringRequirement: newLinkForm.wageringRequirement
-          ? parseInt(newLinkForm.wageringRequirement)
-          : null,
+        cashbackPercentage: newLinkForm.cashbackPercentage ? parseFloat(newLinkForm.cashbackPercentage) : null,
+        wageringRequirement: newLinkForm.wageringRequirement ? parseInt(newLinkForm.wageringRequirement) : null,
         commissionPercentage: parseFloat(newLinkForm.commissionPercentage),
-        maxUses: newLinkForm.maxUses
-          ? parseInt(newLinkForm.maxUses)
-          : null,
+        maxUses: newLinkForm.maxUses ? parseInt(newLinkForm.maxUses) : null,
         startDate: newLinkForm.startDate,
         endDate: newLinkForm.endDate || null,
       };
@@ -288,39 +207,50 @@ const MediaBuyerDetailsPage = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create link");
-      }
-      const data = await response.json();
-      toast.success(`Link created: ${data.code}`);
+      if (!response.ok) throw new Error("Failed");
+      toast.success(`Link created: ${(await response.json()).code}`);
       setCreateLinkModalOpen(false);
       setNewLinkForm({
-        description: "",
-        type: "DEPOSIT_BONUS",
-        bonusPercentage: "",
-        maxBonusAmount: "",
-        minDepositAmount: "",
-        freeSpinsCount: "",
-        freeSpinsGame: "",
-        cashbackPercentage: "",
-        wageringRequirement: "",
-        commissionPercentage: "1.0",
-        maxUses: "",
-        startDate: new Date().toISOString().split("T")[0],
-        endDate: "",
+        description: "", type: "DEPOSIT_BONUS", bonusPercentage: "", maxBonusAmount: "", minDepositAmount: "",
+        freeSpinsCount: "", freeSpinsGame: "", cashbackPercentage: "", wageringRequirement: "",
+        commissionPercentage: "1.0", maxUses: "",
+        startDate: new Date().toISOString().split("T")[0], endDate: "",
       });
       fetchBuyerDetails();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create link");
+      toast.error("Failed to create link");
     } finally {
       setCreating(false);
     }
   };
 
+  const handleWithdraw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!buyer) return;
+    setWithdrawing(true);
+    try {
+      const res = await fetch(`/api/affiliate/media-buyers/${buyer.id}/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: parseFloat(withdrawForm.amount),
+          description: withdrawForm.description,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast.success("Withdrawal created");
+      setWithdrawModalOpen(false);
+      setWithdrawForm({ amount: "", description: "" });
+      fetchBuyerDetails();
+    } catch (error) {
+      toast.error("Failed to withdraw");
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
   const copyToClipboard = (code: string) => {
-    const signupUrl = `https://alt.win/r/${code}`;
-    navigator.clipboard.writeText(signupUrl);
+    navigator.clipboard.writeText(`https://alt.win/r/${code}`);
     setCopiedCode(code);
     toast.success("Signup link copied");
     setTimeout(() => setCopiedCode(null), 2000);
@@ -336,6 +266,17 @@ const MediaBuyerDetailsPage = () => {
     url.searchParams.set("userPage", page.toString());
     router.push(url.pathname + url.search);
   };
+
+  const handleDownload = () => {
+    window.open(
+      `/api/affiliate/media-buyers/${buyer?.id}/dashboard/download?dateFrom=${dateFrom}&dateTo=${dateTo}&hasDeposited=${hasDepositedFilter}`,
+      "_blank"
+    );
+  };
+
+  useEffect(() => {
+    fetchBuyerDetails();
+  }, [params.id, userPage, dateFrom, dateTo, hasDepositedFilter]);
 
   if (loading) {
     return (
@@ -364,8 +305,7 @@ const MediaBuyerDetailsPage = () => {
     <div className="p-4 sm:p-6 max-w-7xl mx-auto mt-2 sm:mt-0">
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
         <Button variant="outline" size="sm" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
         </Button>
         <h1 className="text-xl sm:text-2xl font-bold truncate">
           {buyer.name || buyer.email}
@@ -382,15 +322,14 @@ const MediaBuyerDetailsPage = () => {
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
               <div className="text-3xl font-bold text-green-400">
-                {formatAmount(buyerBalance.finalBalance)}
+                $ {(buyer.totalBalance)}
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => openBalanceDetails()}>
                   Details
                 </Button>
                 <Button variant="outline" onClick={() => setWithdrawModalOpen(true)}>
-                  <TrendingDown className="h-4 w-4 mr-1" />
-                  Withdraw
+                  <TrendingDown className="h-4 w-4 mr-1" /> Withdraw
                 </Button>
               </div>
             </div>
@@ -401,95 +340,45 @@ const MediaBuyerDetailsPage = () => {
       <Dialog open={balanceDetailsOpen} onOpenChange={setBalanceDetailsOpen}>
         <DialogContent className="bg-black border-gray-800 max-h-[80vh] overflow-y-auto w-[95vw] sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>
-              Balance Calculation for {buyer.name || buyer.email}
-            </DialogTitle>
+            <DialogTitle>Balance Calculation for {buyer.name || buyer.email}</DialogTitle>
           </DialogHeader>
           <div className="space-y-6 py-4">
             <div>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="text-gray-400">NGR</div>
-                <div className="text-right font-mono">
-                  {formatAmount(buyerBalance.netFlow)}
-                </div>
-                <div className="text-gray-400">Rate</div>
-                <div className="text-right font-mono">
-                  {buyerBalance.commissionPercent}%
-                </div>
-                <div className="text-gray-400">Commission Earned</div>
-                <div className="text-right font-mono">
-                  {formatAmount(buyerBalance.commissionAmount)}
-                </div>
+                <div className="text-gray-400">FTD Commission</div>
+                <div className="text-right font-mono">$ {(buyer.totalFtdCommission)}</div>
                 <div className="text-gray-400">Withdrawals</div>
-                <div className="text-right font-mono text-yellow-400">
-                  – {formatAmount(buyerBalance.totalOwnWithdrawals)}
-                </div>
+                <div className="text-right font-mono text-yellow-400">–$ {(buyer.totalOwnWithdrawals)}</div>
                 <hr className="col-span-2 border-gray-700" />
                 <div className="text-white font-semibold">Available Balance</div>
                 <div className="text-right font-mono font-bold text-green-400">
-                  {formatAmount(buyerBalance.finalBalance)}
+                  $ {(buyer.totalBalance)}
                 </div>
               </div>
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-gray-400 mb-2">
-                Withdrawals
-              </h3>
+              <h3 className="text-sm font-semibold text-gray-400 mb-2">Withdrawals</h3>
               {loadingDetails ? (
                 <div className="text-center py-4 text-gray-400">Loading...</div>
               ) : withdrawalsList.length === 0 ? (
-                <div className="text-center py-4 text-gray-500">
-                  No withdrawals yet.
-                </div>
+                <div className="text-center py-4 text-gray-500">No withdrawals yet.</div>
               ) : (
                 <>
                   <div className="space-y-2 max-h-[300px] overflow-y-auto">
                     {withdrawalsList.map((w: any) => (
-                      <div
-                        key={w.id}
-                        className="flex justify-between items-center border-b border-gray-800 pb-2 text-sm"
-                      >
-                        <div className="text-gray-300">
-                          {dateFormatter.toIndianDateTime(w.createdAt)}
-                        </div>
-                        <div className="text-yellow-400 font-mono">
-                          {formatAmount(w.amount)}
-                        </div>
-                        <div className="text-gray-500 text-xs">
-                          {w.description || ""}
-                        </div>
+                      <div key={w.id} className="flex justify-between items-center border-b border-gray-800 pb-2 text-sm">
+                        <div className="text-gray-300">{dateFormatter.toIndianDateTime(w.createdAt)}</div>
+                        <div className="text-yellow-400 font-mono">${(w.amount)}</div>
+                        <div className="text-gray-500 text-xs">{w.description || ''}</div>
                       </div>
                     ))}
                   </div>
                   {withdrawalsPagination.totalPages > 1 && (
                     <div className="flex items-center justify-between mt-4 pt-2 border-t border-gray-700">
-                      <div className="text-xs text-gray-400">
-                        Page {withdrawalsPagination.page} of{" "}
-                        {withdrawalsPagination.totalPages}
-                      </div>
+                      <div className="text-xs text-gray-400">Page {withdrawalsPagination.page} of {withdrawalsPagination.totalPages}</div>
                       <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={withdrawalsPagination.page <= 1}
-                          onClick={() =>
-                            handleDetailsPageChange(withdrawalsPagination.page - 1)
-                          }
-                        >
-                          Previous
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={
-                            withdrawalsPagination.page >= withdrawalsPagination.totalPages
-                          }
-                          onClick={() =>
-                            handleDetailsPageChange(withdrawalsPagination.page + 1)
-                          }
-                        >
-                          Next
-                        </Button>
+                        <Button variant="outline" size="sm" disabled={withdrawalsPagination.page <= 1} onClick={() => openBalanceDetails(withdrawalsPagination.page - 1)}>Previous</Button>
+                        <Button variant="outline" size="sm" disabled={withdrawalsPagination.page >= withdrawalsPagination.totalPages} onClick={() => openBalanceDetails(withdrawalsPagination.page + 1)}>Next</Button>
                       </div>
                     </div>
                   )}
@@ -498,147 +387,143 @@ const MediaBuyerDetailsPage = () => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBalanceDetailsOpen(false)}>
-              Close
-            </Button>
+            <Button variant="outline" onClick={() => setBalanceDetailsOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 sm:mb-8">
-        <Card className="bg-black border-gray-800">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">
-              Total Referrals
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center">
-              <Users className="h-5 w-5 text-blue-500 mr-2" />
-              <span className="text-2xl font-bold">{buyer.totalReferrals}</span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-black border-gray-800">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">
-              Total NGR
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center">
-              <span className="text-2xl font-bold text-sky-400">
-                {formatAmount(buyerBalance.netFlow)}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-black border-gray-800">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">
-              Total Deposits
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center">
-              <span className="text-2xl font-bold text-orange-400">
-                {formatAmount(buyer.totalDeposits)}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-        <h2 className="text-lg sm:text-xl font-semibold">Active Promo Codes</h2>
-        <Button
-          onClick={() => setCreateLinkModalOpen(true)}
-          className="w-full sm:w-auto"
-        >
-          <LinkIcon className="h-4 w-4 mr-2" />
-          Create New Link
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2 items-end mb-6">
+        <div className="flex flex-col gap-1 w-full sm:w-auto">
+          <Label className="text-sm text-gray-400">From</Label>
+          <DatePicker
+            date={dateFrom ? new Date(dateFrom + 'T00:00:00') : undefined}
+            onSelect={(d) => {
+              if (d) {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                setDateFrom(`${year}-${month}-${day}`);
+              } else setDateFrom('');
+            }}
+            placeholder="Start date"
+          />
+        </div>
+        <div className="flex flex-col gap-1 w-full sm:w-auto">
+          <Label className="text-sm text-gray-400">To</Label>
+          <DatePicker
+            date={dateTo ? new Date(dateTo + 'T00:00:00') : undefined}
+            onSelect={(d) => {
+              if (d) {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                setDateTo(`${year}-${month}-${day}`);
+              } else setDateTo('');
+            }}
+            placeholder="End date"
+          />
+        </div>
+        <Button onClick={() => fetchBuyerDetails()} className="sm:self-end">Apply</Button>
+        <Button onClick={handleDownload} variant="outline" className="sm:self-end">
+          <Download className="h-4 w-4 mr-1" /> Excel
         </Button>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <Card className="bg-black border-gray-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400 flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-green-400" /> FTD Commission
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">$ {(buyer.totalFtdCommission)}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-black border-gray-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400 flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-green-400" /> Registrations
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{buyer.totalRegistrations}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-black border-gray-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400 flex items-center gap-2">
+              <Banknote className="h-4 w-4 text-yellow-400" /> First Deposits
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{buyer.totalFirstDeposits}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-black border-gray-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Total Deposits</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-400">{formatAmount(buyer.totalDeposits)}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg sm:text-xl font-semibold">Promo Codes</h2>
+        <Button onClick={() => setCreateLinkModalOpen(true)} className="w-full sm:w-auto">
+          <LinkIcon className="h-4 w-4 mr-2" /> Create New Link
+        </Button>
+      </div>
       <div className="rounded-lg shadow-sm border mb-8 overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="whitespace-nowrap">Code</TableHead>
-              <TableHead className="whitespace-nowrap">Type</TableHead>
-              <TableHead className="whitespace-nowrap">Bonus Details</TableHead>
-              <TableHead className="whitespace-nowrap">Uses</TableHead>
+              <TableHead className="whitespace-nowrap">FTD Commission</TableHead>
+              <TableHead className="whitespace-nowrap">FTDs</TableHead>
+              <TableHead className="whitespace-nowrap">Registrations</TableHead>
               <TableHead className="whitespace-nowrap">Status</TableHead>
-              <TableHead className="whitespace-nowrap">Actions</TableHead>
+              <TableHead className="whitespace-nowrap">Bonus Details</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {buyer.assignedPromoCodes.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-4 text-gray-500">
-                  No promo codes created yet.
-                </TableCell>
+                <TableCell colSpan={6} className="text-center py-4 text-gray-500">No promo codes created yet.</TableCell>
               </TableRow>
             ) : (
               buyer.assignedPromoCodes.map((promo) => (
                 <TableRow key={promo.id}>
                   <TableCell className="whitespace-nowrap">
-                    <code className="bg-gray-800 px-2 py-1 rounded">
-                      {promo.code}
-                    </code>
+                    <div className="flex items-center gap-2">
+                      <code className="bg-gray-800 px-2 py-1 rounded">{promo.code}</code>
+                      <button onClick={() => copyToClipboard(promo.code)} className="text-gray-400 hover:text-white">
+                        {copiedCode === promo.code ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">{promo.type}</TableCell>
+                  <TableCell className="whitespace-nowrap">$ {(promo.ftdCommission || "0")}</TableCell>
+                  <TableCell className="whitespace-nowrap">{promo.ftdCount}</TableCell>
+                  <TableCell className="whitespace-nowrap">{promo.registrations}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <span className={`px-2 py-1 rounded-full text-xs ${promo.status === "ACTIVE" ? "bg-green-900 text-green-300" : "bg-gray-800 text-gray-400"}`}>{promo.status}</span>
+                  </TableCell>
                   <TableCell className="whitespace-nowrap">
                     {promo.type === "DEPOSIT_BONUS" && promo.bonusPercentage && (
-                      <span>
-                        {promo.bonusPercentage}% up to{" "}
-                        {formatAmount(promo.maxBonusAmount || "0")}
-                      </span>
+                      <span>{promo.bonusPercentage}% up to {formatAmount(promo.maxBonusAmount || "0")}</span>
                     )}
                     {promo.type === "FREE_SPINS" && promo.freeSpinsCount && (
-                      <span>
-                        {promo.freeSpinsCount} spins{" "}
-                        {promo.freeSpinsGame && `on ${promo.freeSpinsGame}`}
-                      </span>
+                      <span>{promo.freeSpinsCount} spins {promo.freeSpinsGame && `on ${promo.freeSpinsGame}`}</span>
                     )}
                     {promo.type === "CASHBACK" && promo.cashbackPercentage && (
                       <span>{promo.cashbackPercentage}% cashback</span>
                     )}
                     {promo.type === "COMBINED" && <span>Multiple bonuses</span>}
                     {promo.wageringRequirement && (
-                      <span className="block text-xs text-gray-400">
-                        Wager: {promo.wageringRequirement}x
-                      </span>
+                      <span className="block text-xs text-gray-400">Wager: {promo.wageringRequirement}x</span>
                     )}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {promo.currentUses}
-                    {promo.maxUses && ` / ${promo.maxUses}`}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs ${
-                        promo.status === "ACTIVE"
-                          ? "bg-green-900 text-green-300"
-                          : "bg-gray-800 text-gray-400"
-                      }`}
-                    >
-                      {promo.status}
-                    </span>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyToClipboard(promo.code)}
-                    >
-                      {copiedCode === promo.code ? (
-                        <Check className="h-4 w-4 mr-1" />
-                      ) : (
-                        <Copy className="h-4 w-4 mr-1" />
-                      )}
-                      Copy Link
-                    </Button>
                   </TableCell>
                 </TableRow>
               ))
@@ -647,7 +532,20 @@ const MediaBuyerDetailsPage = () => {
         </Table>
       </div>
 
-      <h2 className="text-lg sm:text-xl font-semibold mb-4">Referred Users</h2>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+        <h2 className="text-lg sm:text-xl font-semibold">Referred Users</h2>
+        <Select value={hasDepositedFilter} onValueChange={(value) => setHasDepositedFilter(value)}>
+          <SelectTrigger className="w-full sm:w-[180px] bg-black border-gray-800">
+            <SelectValue placeholder="All" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="deposited">Has Deposited</SelectItem>
+            <SelectItem value="notdeposited">No Deposit</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="rounded-lg shadow-sm border overflow-x-auto">
         <Table>
           <TableHeader>
@@ -655,59 +553,44 @@ const MediaBuyerDetailsPage = () => {
               <TableHead className="whitespace-nowrap">User</TableHead>
               <TableHead className="whitespace-nowrap">Promo Code</TableHead>
               <TableHead className="whitespace-nowrap">Joined</TableHead>
-              <TableHead className="whitespace-nowrap">NGR</TableHead>
+              <TableHead className="whitespace-nowrap">Has Deposited</TableHead>
               <TableHead className="whitespace-nowrap">Transactions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {buyer.referredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-4 text-gray-500">
-                  No referred users yet.
-                </TableCell>
+                <TableCell colSpan={5} className="text-center py-4 text-gray-500">No referred users yet.</TableCell>
               </TableRow>
             ) : (
               buyer.referredUsers.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
                     <div className="flex flex-col">
-                      <span className="font-medium">
-                        {user.name || "Unnamed"}
-                      </span>
-                      <span className="text-sm text-gray-400 truncate max-w-[200px]">
-                        {user.email}
-                      </span>
+                      <span className="font-medium">{user.name || "Unnamed"}</span>
+                      <span className="text-sm text-gray-400 truncate max-w-[200px]">{user.email}</span>
                     </div>
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    <code className="bg-gray-800 px-2 py-1 rounded text-sm">
-                      {user.promoCodeUsed}
-                    </code>
+                    <code className="bg-gray-800 px-2 py-1 rounded text-sm">{user.promoCodeUsed}</code>
                   </TableCell>
+                  <TableCell className="whitespace-nowrap">{dateFormatter.toIndianDateTime(user.joinedAt)}</TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {dateFormatter.toIndianDateTime(user.joinedAt)}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    <span className="font-medium">{formatAmount(user.ngr)}</span>
+                    {user.hasDeposited ? (
+                      <span className="text-green-400 font-medium">Yes</span>
+                    ) : (
+                      <span className="text-gray-400">No</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {user.transactions.length > 0 ? (
-                      <Button
-                        asChild
-                        variant="outline"
-                        size="sm"
-                        className="w-full sm:w-auto"
-                      >
-                        <Link
-                          href={`/affiliate-manager/media-buyers/${buyer.id}/user/${user.id}/transactions`}
-                        >
+                      <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
+                        <Link href={`/affiliate-manager/media-buyers/${buyer.id}/user/${user.id}/transactions`}>
                           View Transactions
                         </Link>
                       </Button>
                     ) : (
-                      <span className="text-gray-500 text-sm pl-2">
-                        No transactions
-                      </span>
+                      <span className="text-gray-500 text-sm pl-2">No transactions</span>
                     )}
                   </TableCell>
                 </TableRow>
@@ -716,70 +599,36 @@ const MediaBuyerDetailsPage = () => {
           </TableBody>
         </Table>
 
-        {buyer.referredUsersPagination &&
-          buyer.referredUsersPagination.totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-800">
-              <div className="text-sm text-gray-400">
-                Showing {(buyer.referredUsersPagination.currentPage - 1) * 10 + 1}{" "}
-                to{" "}
-                {Math.min(
-                  buyer.referredUsersPagination.currentPage * 10,
-                  buyer.referredUsersPagination.totalCount
-                )}{" "}
-                of {buyer.referredUsersPagination.totalCount} users
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    goToUserPage(buyer.referredUsersPagination.currentPage - 1)
-                  }
-                  disabled={!buyer.referredUsersPagination.hasPrev}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Previous
-                </Button>
-                <div className="flex gap-1">
-                  {Array.from(
-                    { length: Math.min(5, buyer.referredUsersPagination.totalPages) },
-                    (_, i) => {
-                      let pageNum: number;
-                      const total = buyer.referredUsersPagination.totalPages;
-                      const current = buyer.referredUsersPagination.currentPage;
-                      if (total <= 5) pageNum = i + 1;
-                      else if (current <= 3) pageNum = i + 1;
-                      else if (current >= total - 2) pageNum = total - 4 + i;
-                      else pageNum = current - 2 + i;
-                      return (
-                        <Button
-                          key={pageNum}
-                          variant={current === pageNum ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => goToUserPage(pageNum)}
-                        >
-                          {pageNum}
-                        </Button>
-                      );
-                    }
-                  )}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    goToUserPage(
-                      buyer.referredUsersPagination.currentPage + 1
-                    )
-                  }
-                  disabled={!buyer.referredUsersPagination.hasNext}
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+        {buyer.referredUsersPagination && buyer.referredUsersPagination.totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-gray-800">
+            <div className="text-sm text-gray-400">
+              Showing {(buyer.referredUsersPagination.currentPage - 1) * 10 + 1} to {Math.min(buyer.referredUsersPagination.currentPage * 10, buyer.referredUsersPagination.totalCount)} of {buyer.referredUsersPagination.totalCount} users
             </div>
-          )}
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => goToUserPage(buyer.referredUsersPagination.currentPage - 1)} disabled={!buyer.referredUsersPagination.hasPrev}>
+                <ChevronLeft className="h-4 w-4" /><span className="hidden sm:inline ml-1">Previous</span>
+              </Button>
+              <div className="hidden sm:flex gap-1">
+                {Array.from({ length: Math.min(5, buyer.referredUsersPagination.totalPages) }, (_, i) => {
+                  let pageNum: number;
+                  const total = buyer.referredUsersPagination.totalPages;
+                  const current = buyer.referredUsersPagination.currentPage;
+                  if (total <= 5) pageNum = i + 1;
+                  else if (current <= 3) pageNum = i + 1;
+                  else if (current >= total - 2) pageNum = total - 4 + i;
+                  else pageNum = current - 2 + i;
+                  return (
+                    <Button key={pageNum} variant={current === pageNum ? "default" : "outline"} size="sm" onClick={() => goToUserPage(pageNum)}>{pageNum}</Button>
+                  );
+                })}
+              </div>
+              <span className="sm:hidden text-sm text-gray-400">Page {buyer.referredUsersPagination.currentPage} of {buyer.referredUsersPagination.totalPages}</span>
+              <Button variant="outline" size="sm" onClick={() => goToUserPage(buyer.referredUsersPagination.currentPage + 1)} disabled={!buyer.referredUsersPagination.hasNext}>
+                <span className="hidden sm:inline mr-1">Next</span><ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <Dialog open={createLinkModalOpen} onOpenChange={setCreateLinkModalOpen}>
@@ -804,7 +653,7 @@ const MediaBuyerDetailsPage = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ftdFee">FTD Fee (₹)</Label>
+                <Label htmlFor="ftdFee">FTD Fee ($)</Label>
                 <Input
                   id="ftdFee"
                   type="number"

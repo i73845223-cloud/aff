@@ -17,6 +17,15 @@ export async function GET(
   const showDetails = searchParams.get('details') === 'true';
   const page = parseInt(searchParams.get('page') || '1');
   const limit = parseInt(searchParams.get('limit') || '10');
+  const dateFrom = searchParams.get('dateFrom');
+  const dateTo = searchParams.get('dateTo');
+
+  const dateFilter: any = {};
+  if (dateFrom || dateTo) {
+    dateFilter.createdAt = {};
+    if (dateFrom) dateFilter.createdAt.gte = new Date(dateFrom);
+    if (dateTo) dateFilter.createdAt.lte = new Date(dateTo);
+  }
 
   const buyer = await db.user.findFirst({
     where: { id: buyerId, role: 'MEDIA' },
@@ -26,59 +35,58 @@ export async function GET(
     return NextResponse.json({ error: 'Media buyer not found' }, { status: 404 });
   }
 
-  const commissionPercent = buyer.commissionPercent || 0;
-
   const promoCodes = await db.promoCode.findMany({
     where: { assignedUserId: buyerId },
-    select: { id: true },
+    select: { id: true, commissionPercentage: true },
   });
   const promoCodeIds = promoCodes.map(p => p.id);
 
-  let netFlow = new Prisma.Decimal(0);
+  const upcFilter: any = { promoCodeId: { in: promoCodeIds } };
+  if (dateFilter.createdAt) upcFilter.lastUsedAt = dateFilter.createdAt;
+  const allUserPromoCodes = await db.userPromoCode.findMany({
+    where: upcFilter,
+    select: { userId: true, promoCodeId: true },
+  });
+  const referredUserIds = [...new Set(allUserPromoCodes.map(u => u.userId))];
 
-  if (promoCodeIds.length > 0) {
-    const userPromoCodes = await db.userPromoCode.findMany({
-      where: { promoCodeId: { in: promoCodeIds } },
-      select: { userId: true },
+  let firstDepositDates: { userId: string }[] = [];
+  let totalFtdCommission = new Prisma.Decimal(0);
+
+  if (referredUserIds.length > 0) {
+    const firstDepRaw = await db.transaction.groupBy({
+      by: ['userId'],
+      where: { userId: { in: referredUserIds }, type: 'deposit', status: 'success' },
+      _min: { createdAt: true },
     });
-    const referredUserIds = [...new Set(userPromoCodes.map(up => up.userId))];
-
-    if (referredUserIds.length > 0) {
-      const withdrawals = await db.transaction.aggregate({
-        where: {
-          userId: { in: referredUserIds },
-          type: 'withdrawal',
-          status: 'success',
-          category: { not: 'transaction' },
-        },
-        _sum: { amount: true },
+    firstDepositDates = firstDepRaw
+      .filter(d => d._min.createdAt)
+      .filter(d => {
+        const dDate = d._min.createdAt!;
+        if (dateFrom && dDate < new Date(dateFrom)) return false;
+        if (dateTo && dDate > new Date(dateTo)) return false;
+        return true;
       });
 
-      const deposits = await db.transaction.aggregate({
-        where: {
-          userId: { in: referredUserIds },
-          type: 'deposit',
-          status: { in: ['success', 'pending'] },
-          category: { not: 'transaction' },
-        },
-        _sum: { amount: true },
-      });
-
-      const totalW = withdrawals._sum.amount || new Prisma.Decimal(0);
-      const totalD = deposits._sum.amount || new Prisma.Decimal(0);
-      netFlow = totalW.minus(totalD);
+    for (const pc of promoCodes) {
+      const ftdFee = pc.commissionPercentage || 0;
+      const usersForCode = allUserPromoCodes.filter(u => u.promoCodeId === pc.id).map(u => u.userId);
+      const uniqueUsers = [...new Set(usersForCode)];
+      const ftdCount = uniqueUsers.filter(uid => firstDepositDates.some(d => d.userId === uid)).length;
+      totalFtdCommission = totalFtdCommission.add(new Prisma.Decimal(ftdFee).mul(ftdCount));
     }
   }
 
-  const commissionAmount = netFlow.mul(commissionPercent).div(100);
-
-  const ownWithdrawals = await db.transaction.aggregate({
-    where: { userId: buyerId, type: 'withdrawal', status: 'success' },
+  const ownW = await db.transaction.aggregate({
+    where: {
+      userId: buyerId,
+      type: 'withdrawal',
+      status: 'success',
+      ...(dateFilter.createdAt ? { createdAt: dateFilter.createdAt } : {}),
+    },
     _sum: { amount: true },
   });
-  const totalOwnWithdrawals = ownWithdrawals._sum.amount || new Prisma.Decimal(0);
-
-  const finalBalance = commissionAmount.minus(totalOwnWithdrawals);
+  const ownWithdrawals = ownW._sum.amount || new Prisma.Decimal(0);
+  const balance = totalFtdCommission.minus(ownWithdrawals);
 
   let withdrawalsList: any[] = [];
   let withdrawalsTotal = 0;
@@ -86,24 +94,34 @@ export async function GET(
     const skip = (page - 1) * limit;
     const [list, count] = await Promise.all([
       db.transaction.findMany({
-        where: { userId: buyerId, type: 'withdrawal', status: 'success' },
+        where: {
+          userId: buyerId,
+          type: 'withdrawal',
+          status: 'success',
+          ...(dateFilter.createdAt ? { createdAt: dateFilter.createdAt } : {}),
+        },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
         select: { id: true, amount: true, createdAt: true, description: true },
       }),
-      db.transaction.count({ where: { userId: buyerId, type: 'withdrawal', status: 'success' } }),
+      db.transaction.count({
+        where: {
+          userId: buyerId,
+          type: 'withdrawal',
+          status: 'success',
+          ...(dateFilter.createdAt ? { createdAt: dateFilter.createdAt } : {}),
+        },
+      }),
     ]);
     withdrawalsList = list;
     withdrawalsTotal = count;
   }
 
   return NextResponse.json({
-    netFlow: netFlow.toString(),
-    commissionPercent,
-    commissionAmount: commissionAmount.toString(),
-    totalOwnWithdrawals: totalOwnWithdrawals.toString(),
-    finalBalance: finalBalance.toString(),
+    totalFtdCommission: totalFtdCommission.toString(),
+    ownWithdrawals: ownWithdrawals.toString(),
+    balance: balance.toString(),
     ...(showDetails && {
       withdrawals: withdrawalsList,
       withdrawalsPagination: {
